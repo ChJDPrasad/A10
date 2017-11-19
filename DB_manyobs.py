@@ -16,21 +16,21 @@ class DamBreak_and_Obstacle(Application):
 
 
 	def create_equations(self):
-		self.dx = 0.05
+		self.dx = 0.08
 		self.hdx = 1.3
 		self.rho0 = 1000.
-		self.rho0_solid = 2000.
-		self.rho0_cube = 1000.
+		self.rho0_solid = 5000.
+		self.rho0_obstacles = [2000., 500.]
 		self.c0 = 60.
 		self.c0_solid = 600.
-		self.c0_cube = 600.
+		self.c0_obstacles = [600., 600.]
 		self.gamma = 7.
 		self.gamma_solid = 7.
-		self.gamma_cube = 7.
+		self.gamma_obstacles = [7.,7.]
 		self.alpha = 0.1
 		self.beta = 0.
 		self.gx, self.gy, self.gz = 0., -9.81, 0.
-		self.nu = 0.
+		self.nu = 8.9e-4
 		self.cs = 0.
 		self.dim = 2
 		self.tensile_correction = False
@@ -44,18 +44,19 @@ class DamBreak_and_Obstacle(Application):
 		x_f,y_f = np.mgrid[0:5:self.dx,0:5:self.dx]
 		x_s,y_s = np.mgrid[0-self.dx:10+self.dx:self.dx,0-self.dx:10+self.dx:self.dx]
 		x_s1, y_s1 = np.mgrid[3:4:self.dx, 5.2:6.2:self.dx]
+		x_s2, y_s2 = np.mgrid[5.5:6.5:self.dx, 2:3:self.dx]
 		c = np.arange(0-self.dx,10+self.dx,self.dx)
 		x_s = np.concatenate((np.concatenate(((0-self.dx)*np.ones_like(c),c)),(10+self.dx)*np.ones_like(c)))
 		y_s = np.concatenate((np.concatenate((c[::-1],(0-self.dx)*np.ones_like(c))),c))
-		np.arange(0-self.dx,10+self.dx,self.dx)
 
 		pa_fluid = get_particle_array_wcsph(name = 'fluid', x = x_f, y = y_f, m = self.rho0*self.dx*self.dx, rho = np.ones_like(x_f)*self.rho0 , h = np.ones_like(x_f)*self.dx*self.hdx, u = 0*x_f, v = 0*y_f)
 		pa_solid = get_particle_array_wcsph(name = 'wall', x = x_s, y = y_s, m = self.rho0_solid*(self.dx)*(self.dx), rho = np.ones_like(x_s)*self.rho0_solid , \
 			h = (np.ones_like(x_s))*(self.dx)*self.hdx, u = 0*x_s, v = 0*y_s, rad_s = np.ones_like(x_s)/self.dx)
-		pa_cube = get_particle_array_rigid_body(name = 'cube', x = x_s1, y = y_s1, m = self.rho0_cube*self.dx*self.dx, rho = np.ones_like(x_s1)*self.rho0_cube , \
+		pa_cube = get_particle_array_rigid_body(name = 'cube', x = x_s1, y = y_s1, m = self.rho0_obstacles[0]*self.dx*self.dx, rho = np.ones_like(x_s1)*self.rho0_obstacles[0] , \
 			h = (np.ones_like(x_s1))*self.dx*self.hdx, u = 0*x_s1, v = 0*y_s1,cs = self.cs*np.ones_like(x_s1), rad_s = np.ones_like(x_s1)/self.dx)
-
-		return [pa_fluid ,pa_solid, pa_cube]
+		pa_cube1 = get_particle_array_rigid_body(name = 'cube1', x = x_s2, y = y_s2, m = self.rho0_obstacles[1]*self.dx*self.dx, rho = np.ones_like(x_s2)*self.rho0_obstacles[1] , \
+			h = (np.ones_like(x_s2))*self.dx*self.hdx, u = 0*x_s2, v = 0*y_s2,cs = self.cs*np.ones_like(x_s2), rad_s = np.ones_like(x_s2)/self.dx)
+		return [pa_fluid ,pa_solid, pa_cube, pa_cube1]
 	
 
 	def get_equations(self):
@@ -67,7 +68,7 @@ class DamBreak_and_Obstacle(Application):
 
 		self.fluids = ['fluid']
 		self.boundary = ['wall']
-		self.obstacles = ['cube']
+		self.obstacles = ['cube', 'cube1']
 		self.solids = self.boundary + self.obstacles
 
 		equations = []
@@ -90,21 +91,14 @@ class DamBreak_and_Obstacle(Application):
 				dest=name, sources=None, rho0=self.rho0_solid, c0=self.c0_solid,
 				gamma=self.gamma_solid
 			))
+		count1 = 0
 		for name in self.obstacles:
 			g1.append(TaitEOSHGCorrection(
-				dest=name, sources=None, rho0=self.rho0_cube, c0=self.c0_cube,
-				gamma=self.gamma_cube  
+				dest=name, sources=None, rho0=self.rho0_obstacles[count1], c0=self.c0_obstacles[count1],
+				gamma=self.gamma_obstacles[count1] 
 			))
+			count1 = count1 + 1
 		equations.append(Group(equations=g1, real=False))
-
-
-		# if self.hg_correction:
-		#     # This correction applies only to solids.
-		#     for name in self.solids:
-		#         g1.append(TaitEOSHGCorrection(
-		#             dest=name, sources=None, rho0=self.rho0_solid, c0=self.c0_solid,
-		#             gamma=self.gamma_solid
-		#         ))
 
 		
 		g2 = []
@@ -130,7 +124,7 @@ class DamBreak_and_Obstacle(Application):
 
 		g3 = []
 		for name in self.obstacles:
-			g3.append(RigidBodyCollision(dest = name,sources = self.boundary,kn = 1e3))
+			g3.append(RigidBodyCollision(dest = name,sources = self.boundary + self.obstacles ,kn = 1e3))
 			g3.append(RigidBodyMoments(dest = name,sources = None))
 			g3.append(RigidBodyMotion(dest = name,sources = None))
 		equations.append(Group(equations=g3))            
@@ -149,10 +143,10 @@ class DamBreak_and_Obstacle(Application):
 	def create_solver(self):
 		kernel = CubicSpline(dim = 2)
 		
-		integrator = EPECIntegrator(fluid = WCSPHStep(),wall = WCSPHStep(),cube = RK2StepRigidBody())
+		integrator = EPECIntegrator(fluid = WCSPHStep(),wall = WCSPHStep(),cube = RK2StepRigidBody(), cube1 = RK2StepRigidBody())
 		
 		dt = 0.01
-		tf = 2
+		tf = 5
 		solver = Solver(kernel = kernel,dim = 2,integrator = integrator,dt = dt,tf = tf, adaptive_timestep=True)
 		return solver
 
